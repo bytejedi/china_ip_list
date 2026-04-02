@@ -52,7 +52,7 @@ Examples:
   %(prog)s --skip 192.168.0.0/16
   %(prog)s --skip 192.168.0.0/16 172.16.0.0/12 169.254.0.0/16
   %(prog)s --skip 192.168.0.0/16 -o my_allowed.txt
-  %(prog)s --lookup 36.110.223.79
+  %(prog)s --lookup 114.114.114.114
   %(prog)s --lookup 8.8.8.8 1.1.1.1 192.168.1.1""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -85,13 +85,19 @@ Examples:
 
     # Handle --lookup mode
     if args.lookup:
+        china_grouped = {}  # net -> [ip_str, ...]
+        foreign_ips = []
         for ip_str in args.lookup:
             ip = ipaddress.ip_address(ip_str)
             matched = [net for net in china_nets if ip in net]
             if matched:
-                print(f"{ip_str} -> China subnet {matched[0]} (skipped, no tunnel)")
+                china_grouped.setdefault(matched[0], []).append(ip_str)
             else:
-                print(f"{ip_str} -> not in China IP list (goes through WireGuard)")
+                foreign_ips.append(ip_str)
+        for net, ips in china_grouped.items():
+            print(f"{net} ({len(ips)} IPs: {', '.join(ips)}) -> China (skipped, no tunnel)")
+        for ip_str in foreign_ips:
+            print(f"{ip_str} -> not in China IP list (goes through WireGuard)")
         return
 
     # Build full exclude list: China IPs + extra skips
