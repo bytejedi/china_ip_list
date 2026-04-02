@@ -51,7 +51,9 @@ Examples:
   %(prog)s
   %(prog)s --skip 192.168.0.0/16
   %(prog)s --skip 192.168.0.0/16 172.16.0.0/12 169.254.0.0/16
-  %(prog)s --skip 192.168.0.0/16 -o my_allowed.txt""",
+  %(prog)s --skip 192.168.0.0/16 -o my_allowed.txt
+  %(prog)s --lookup 36.110.223.79
+  %(prog)s --lookup 8.8.8.8 1.1.1.1 192.168.1.1""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -62,6 +64,10 @@ Examples:
         "-o", "--output", default=None, metavar="FILE",
         help="output file path (default: allowed_ips.txt in script directory)",
     )
+    parser.add_argument(
+        "--lookup", nargs="+", default=[], metavar="IP",
+        help="look up IPs: show which China subnet they belong to and whether they go through WireGuard",
+    )
     args = parser.parse_args()
 
     script_dir = Path(__file__).parent
@@ -69,18 +75,29 @@ Examples:
     output_file = Path(args.output) if args.output else script_dir / "allowed_ips.txt"
 
     # Read and parse China IP ranges
-    exclude_nets = []
+    china_nets = []
     with open(china_ip_file, "r") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                exclude_nets.append(ipaddress.ip_network(line, strict=False))
+                china_nets.append(ipaddress.ip_network(line, strict=False))
+    china_nets = list(ipaddress.collapse_addresses(china_nets))
 
-    # Add extra skips from command line
+    # Handle --lookup mode
+    if args.lookup:
+        for ip_str in args.lookup:
+            ip = ipaddress.ip_address(ip_str)
+            matched = [net for net in china_nets if ip in net]
+            if matched:
+                print(f"{ip_str} -> China subnet {matched[0]} (skipped, no tunnel)")
+            else:
+                print(f"{ip_str} -> not in China IP list (goes through WireGuard)")
+        return
+
+    # Build full exclude list: China IPs + extra skips
+    exclude_nets = list(china_nets)
     for cidr in args.skip:
         exclude_nets.append(ipaddress.ip_network(cidr, strict=False))
-
-    # Collapse overlapping/adjacent ranges
     exclude_nets = list(ipaddress.collapse_addresses(exclude_nets))
     print(f"Loaded {len(exclude_nets)} collapsed exclude ranges")
 
@@ -112,7 +129,7 @@ Examples:
     print(f"Result: {len(result)} allowed IP ranges")
 
     # Write comma-separated output
-    output = ",".join(str(net) for net in result)
+    output = ", ".join(str(net) for net in result)
     with open(output_file, "w") as f:
         f.write(output)
         f.write("\n")
