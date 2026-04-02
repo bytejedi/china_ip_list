@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Compute AllowedIPs = 0.0.0.0/0 - china_ip_list.txt
-Output: comma-separated CIDR ranges (non-China IPs)
+Compute AllowedIPs = 0.0.0.0/0 - china_ip_list.txt - extra skips
+Output: comma-separated CIDR ranges for WireGuard AllowedIPs
 
 Uses integer interval complement algorithm for efficiency.
 """
 
+import argparse
 import ipaddress
 from pathlib import Path
 
@@ -21,13 +22,10 @@ def range_to_cidrs(start, end):
     """Convert an integer range [start, end] to a list of CIDR networks."""
     cidrs = []
     while start <= end:
-        # Largest prefix that starts at 'start' and fits within [start, end]
-        # 1. max bits from trailing zeros of start
         if start == 0:
             max_bits = 32
         else:
             max_bits = (start & -start).bit_length() - 1
-        # 2. max bits that fit within remaining range
         range_bits = (end - start + 1).bit_length() - 1
         bits = min(max_bits, range_bits)
         cidrs.append(ipaddress.IPv4Network((start, 32 - bits)))
@@ -36,24 +34,58 @@ def range_to_cidrs(start, end):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Generate WireGuard AllowedIPs by subtracting China IPs from 0.0.0.0/0",
+        epilog="""\
+Common private/reserved CIDRs you may want to skip:
+  10.0.0.0/8        Private (Class A) - NOTE: do NOT skip if WireGuard uses 10.x subnet
+  172.16.0.0/12     Private (Class B)
+  192.168.0.0/16    Private (Class C)
+  100.64.0.0/10     Carrier-grade NAT (CGNAT)
+  127.0.0.0/8       Loopback
+  169.254.0.0/16    Link-local
+  224.0.0.0/4       Multicast
+  240.0.0.0/4       Reserved
+
+Examples:
+  %(prog)s
+  %(prog)s --skip 192.168.0.0/16
+  %(prog)s --skip 192.168.0.0/16 172.16.0.0/12 169.254.0.0/16
+  %(prog)s --skip 192.168.0.0/16 -o my_allowed.txt""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--skip", nargs="+", default=[], metavar="CIDR",
+        help="additional CIDRs to skip (not routed through WireGuard)",
+    )
+    parser.add_argument(
+        "-o", "--output", default=None, metavar="FILE",
+        help="output file path (default: allowed_ips.txt in script directory)",
+    )
+    args = parser.parse_args()
+
     script_dir = Path(__file__).parent
     china_ip_file = script_dir / "china_ip_list.txt"
-    output_file = script_dir / "allowed_ips.txt"
+    output_file = Path(args.output) if args.output else script_dir / "allowed_ips.txt"
 
     # Read and parse China IP ranges
-    china_nets = []
+    exclude_nets = []
     with open(china_ip_file, "r") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                china_nets.append(ipaddress.ip_network(line, strict=False))
+                exclude_nets.append(ipaddress.ip_network(line, strict=False))
+
+    # Add extra skips from command line
+    for cidr in args.skip:
+        exclude_nets.append(ipaddress.ip_network(cidr, strict=False))
 
     # Collapse overlapping/adjacent ranges
-    china_nets = list(ipaddress.collapse_addresses(china_nets))
-    print(f"Loaded {len(china_nets)} collapsed China IP ranges")
+    exclude_nets = list(ipaddress.collapse_addresses(exclude_nets))
+    print(f"Loaded {len(exclude_nets)} collapsed exclude ranges")
 
     # Convert to sorted integer intervals and merge
-    intervals = sorted(ip_net_to_range(net) for net in china_nets)
+    intervals = sorted(ip_net_to_range(net) for net in exclude_nets)
     merged = []
     for start, end in intervals:
         if merged and start <= merged[-1][1] + 1:
@@ -62,9 +94,9 @@ def main():
             merged.append((start, end))
 
     # Compute complement within [0, 2^32 - 1]
-    full_start, full_end = 0, (1 << 32) - 1
+    full_end = (1 << 32) - 1
     gaps = []
-    cursor = full_start
+    cursor = 0
     for start, end in merged:
         if cursor < start:
             gaps.append((cursor, start - 1))
@@ -77,7 +109,7 @@ def main():
     for start, end in gaps:
         result.extend(range_to_cidrs(start, end))
 
-    print(f"Result: {len(result)} non-China IP ranges")
+    print(f"Result: {len(result)} allowed IP ranges")
 
     # Write comma-separated output
     output = ",".join(str(net) for net in result)
