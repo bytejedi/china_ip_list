@@ -22,6 +22,27 @@
 
 9、本数据使用 CC-BY-NC-SA 4.0 授权许可。
 
+**WireGuard AllowedIPs 生成工具：**
+
+将 `0.0.0.0/0` 减去中国 IP 段，生成 WireGuard AllowedIPs 配置（非中国流量走隧道）：
+
+```bash
+# 基本用法
+python3 generate_allowed_ips.py
+
+# 额外跳过内网段（不走隧道）
+python3 generate_allowed_ips.py --skip 192.168.0.0/16
+
+# 查看帮助
+python3 generate_allowed_ips.py --help
+```
+
+写入 WireGuard 配置文件（macOS）：
+
+```bash
+sed -i '' "s|^AllowedIPs = .*|AllowedIPs = $(cat allowed_ips.txt)|" /etc/wireguard/wg0.conf
+```
+
 **相关链接：**
 
 1、[IP 地址库试用版下载](https://www.ipip.net/ipdb.html "IPIP.NET IP 归属地数据库")
