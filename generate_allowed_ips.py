@@ -86,18 +86,13 @@ Examples:
     # Handle --lookup mode
     if args.lookup:
         china_grouped = {}  # net -> [ip_str, ...]
-        foreign_ips = []
         for ip_str in args.lookup:
             ip = ipaddress.ip_address(ip_str)
             matched = [net for net in china_nets if ip in net]
             if matched:
                 china_grouped.setdefault(matched[0], []).append(ip_str)
-            else:
-                foreign_ips.append(ip_str)
-        for net, ips in china_grouped.items():
-            print(f"{net} ({len(ips)} IPs: {', '.join(ips)}) -> China (skipped, no tunnel)")
-        for ip_str in foreign_ips:
-            print(f"{ip_str} -> not in China IP list (goes through WireGuard)")
+        for net in china_grouped:
+            print(net)
         return
 
     # Build full exclude list: China IPs + extra skips
