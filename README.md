@@ -24,23 +24,70 @@
 
 **WireGuard AllowedIPs 生成工具：**
 
-将 `0.0.0.0/0` 减去中国 IP 段，生成 WireGuard AllowedIPs 配置（非中国流量走隧道）：
+将 `0.0.0.0/0` 减去中国 IP 段，生成 WireGuard AllowedIPs 配置（非中国流量走隧道）。
+
+**基本用法：**
 
 ```bash
-# 基本用法
 python3 generate_allowed_ips.py
-
-# 额外跳过内网段（不走隧道）
-python3 generate_allowed_ips.py --skip 192.168.0.0/16
-
-# 查看帮助
-python3 generate_allowed_ips.py --help
 ```
 
-写入 WireGuard 配置文件（macOS）：
+默认读取同目录下的 `china_ip_list.txt`，输出到 `allowed_ips.txt`（逗号分隔的 CIDR 列表）。
+
+**跳过额外网段（`--skip`）：**
+
+使用 `--skip` 指定不走隧道的额外 CIDR 段（如内网、保留地址等）：
+
+```bash
+# 跳过单个网段
+python3 generate_allowed_ips.py --skip 192.168.0.0/16
+
+# 跳过多个网段
+python3 generate_allowed_ips.py --skip 192.168.0.0/16 172.16.0.0/12 169.254.0.0/16
+```
+
+常见可跳过的网段：
+
+| CIDR | 说明 |
+|------|------|
+| `10.0.0.0/8` | A 类私有地址（若 WireGuard 使用 10.x 子网则不要跳过） |
+| `172.16.0.0/12` | B 类私有地址 |
+| `192.168.0.0/16` | C 类私有地址 |
+| `100.64.0.0/10` | 运营商级 NAT（CGNAT） |
+| `127.0.0.0/8` | 回环地址 |
+| `169.254.0.0/16` | 链路本地地址 |
+| `224.0.0.0/4` | 组播地址 |
+| `240.0.0.0/4` | 保留地址 |
+
+**自定义输出路径（`-o` / `--output`）：**
+
+```bash
+python3 generate_allowed_ips.py -o my_allowed.txt
+python3 generate_allowed_ips.py --skip 192.168.0.0/16 -o /etc/wireguard/allowed.txt
+```
+
+**IP 查询（`--lookup`）：**
+
+查询 IP 是否属于中国 IP 段，输出匹配的子网（若无输出则不在中国 IP 段内，流量将走隧道）：
+
+```bash
+# 查询单个 IP
+python3 generate_allowed_ips.py --lookup 114.114.114.114
+
+# 查询多个 IP
+python3 generate_allowed_ips.py --lookup 8.8.8.8 1.1.1.1 192.168.1.1
+```
+
+**写入 WireGuard 配置文件（macOS）：**
 
 ```bash
 sed -i '' "s|^AllowedIPs = .*|AllowedIPs = $(cat allowed_ips.txt)|" /etc/wireguard/wg0.conf
+```
+
+**查看完整帮助：**
+
+```bash
+python3 generate_allowed_ips.py --help
 ```
 
 **相关链接：**
